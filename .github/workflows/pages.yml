@@ -1,3 +1,4 @@
+# Deploys the static site to GitHub Pages on every push to main.
 name: Deploy Pages
 on:
   push:
