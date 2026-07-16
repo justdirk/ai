@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LLM Cross-Checker — models reviewing each other</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --panel: #181b24;
+    --panel2: #1f2330;
+    --border: #2c3140;
+    --text: #e8eaf0;
+    --muted: #9aa1b2;
+    --accent: #6ea8fe;
+    --green: #4ade80;
+    --amber: #fbbf24;
+    --red: #f87171;
+    --radius: 12px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 0 16px 80px;
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.55;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; }
+  header { padding: 36px 0 8px; }
+  h1 { font-size: 26px; margin: 0 0 6px; }
+  h1 .dot { color: var(--accent); }
+  .sub { color: var(--muted); margin: 0 0 18px; font-size: 15px; }
+  .card {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 18px 20px; margin-bottom: 16px;
+  }
+  .card h2 { font-size: 15px; margin: 0 0 12px; color: var(--accent); letter-spacing: .3px; text-transform: uppercase; }
+  label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 4px; }
+  input[type=password], input[type=text], textarea, select {
+    width: 100%; background: var(--panel2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px 12px; font-size: 14px; font-family: inherit;
+  }
+  textarea { min-height: 90px; resize: vertical; }
+  select { appearance: auto; }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; }
+  .row > div { flex: 1; min-width: 220px; }
+  button {
+    background: var(--accent); color: #0b1220; border: 0;
+    border-radius: 8px; padding: 12px 22px; font-size: 15px; font-weight: 600;
+    cursor: pointer; margin-top: 14px;
+  }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.secondary { background: var(--panel2); color: var(--text); border: 1px solid var(--border); }
+  .hint { font-size: 12.5px; color: var(--muted); margin-top: 6px; }
+  .hint a { color: var(--accent); }
+  details { margin-top: 8px; }
+  summary { cursor: pointer; color: var(--accent); font-size: 14px; }
+  .stage { margin-top: 22px; }
+  .stage-title {
+    display: flex; align-items: center; gap: 10px;
+    font-size: 16px; font-weight: 600; margin-bottom: 10px;
+  }
+  .badge {
+    font-size: 11px; padding: 2px 9px; border-radius: 999px;
+    border: 1px solid var(--border); color: var(--muted);
+  }
+  .badge.running { color: var(--amber); border-color: var(--amber); }
+  .badge.done { color: var(--green); border-color: var(--green); }
+  .badge.error { color: var(--red); border-color: var(--red); }
+  .answers { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
+  .answer {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 14px 16px;
+    display: flex; flex-direction: column;
+  }
+  .answer.winner { border-color: var(--green); box-shadow: 0 0 0 1px var(--green); }
+  .answer h3 { margin: 0 0 8px; font-size: 14px; color: var(--accent); word-break: break-all; }
+  .answer .content {
+    font-size: 13.5px; white-space: pre-wrap; overflow-y: auto; max-height: 340px;
+    color: var(--text);
+  }
+  .critique { border-top: 1px dashed var(--border); margin-top: 10px; padding-top: 10px; }
+  .critique h4 { margin: 0 0 6px; font-size: 12px; color: var(--amber); text-transform: uppercase; letter-spacing: .4px; }
+  .critique .content { max-height: 220px; }
+  .spinner {
+    width: 15px; height: 15px; border: 2px solid var(--border);
+    border-top-color: var(--accent); border-radius: 50%;
+    animation: spin .8s linear infinite; display: inline-block;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .verdict { border-color: var(--green); }
+  .score-row { display: flex; align-items: center; gap: 10px; margin: 8px 0; }
+  .score-bar-wrap { flex: 1; background: var(--panel2); border-radius: 6px; height: 10px; overflow: hidden; }
+  .score-bar { height: 100%; background: var(--accent); border-radius: 6px; transition: width .6s; }
+  .score-num { width: 46px; text-align: right; font-weight: 700; }
+  .score-model { width: 230px; font-size: 13px; color: var(--muted); word-break: break-all; }
+  .winner-line { font-size: 15px; margin-top: 10px; }
+  .winner-line strong { color: var(--green); }
+  .error-box { color: var(--red); font-size: 13.5px; white-space: pre-wrap; }
+  .explain p { font-size: 14px; color: var(--muted); margin: 8px 0; }
+  .explain strong { color: var(--text); }
+  footer { color: var(--muted); font-size: 12.5px; margin-top: 28px; text-align: center; }
+  @media (max-width: 640px) { .score-model { width: 110px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>LLM Cross-Checker<span class="dot">.</span></h1>
+    <p class="sub">Ask one question. Three open models answer, critique each other's work, and a judge model picks the winner.</p>
+  </header>
+
+  <div class="card" id="setup">
+    <h2>Setup</h2>
+    <label for="provider">Where do the models run?</label>
+    <select id="provider">
+      <option value="openrouter">OpenRouter (hosted, hundreds of open models)</option>
+      <option value="custom">My own server (vLLM / Ollama — self-hosted)</option>
+    </select>
+    <div id="baseurl-row" style="display:none">
+      <label for="baseurl">Your server's API base URL</label>
+      <input type="text" id="baseurl" placeholder="https://your-pod-id-8000.proxy.runpod.net/v1">
+      <div class="hint">The OpenAI-compatible endpoint of your vLLM or Ollama server, ending in /v1.</div>
+    </div>
+    <label for="apikey">API key <span id="key-optional" style="display:none">(optional for your own server)</span></label>
+    <input type="password" id="apikey" placeholder="sk-or-v1-...">
+    <div class="hint" id="or-hint">
+      Create a free account at <a href="https://openrouter.ai" target="_blank" rel="noopener">openrouter.ai</a>, add a few dollars of credit, then create a key under
+      <a href="https://openrouter.ai/settings/keys" target="_blank" rel="noopener">Settings &rarr; Keys</a>.
+      The key is stored only in this browser (localStorage) and sent only to the model server — this page has no server of its own.
+    </div>
+    <details>
+      <summary>Choose which models compete (loaded live from OpenRouter)</summary>
+      <div class="row">
+        <div><label>Contender 1</label><select id="m1"></select></div>
+        <div><label>Contender 2</label><select id="m2"></select></div>
+        <div><label>Contender 3</label><select id="m3"></select></div>
+        <div><label>Judge</label><select id="mj"></select></div>
+      </div>
+      <div class="hint">Defaults pick Kimi, DeepSeek and Qwen when available. The judge should ideally be a model that is not competing.</div>
+    </details>
+  </div>
+
+  <div class="card">
+    <h2>Your question</h2>
+    <textarea id="question" placeholder="Try something with a verifiable answer, e.g. a math problem, a coding task, or a factual question — then watch where the models disagree."></textarea>
+    <button id="run">Run cross-check</button>
+    <button id="clear" class="secondary" style="margin-left:8px">Clear</button>
+  </div>
+
+  <div id="pipeline"></div>
+
+  <div class="card explain">
+    <h2>How this works (the part worth learning)</h2>
+    <p><strong>Stage 1 — Independent answers.</strong> The same question goes to three models in parallel. Diversity matters: models trained by different labs make different mistakes.</p>
+    <p><strong>Stage 2 — Peer critique.</strong> Each model receives the two rival answers (anonymized, so no brand bias) and is asked to find errors and omissions. This is the "check each other's work" step — in the literature it's called <em>multi-agent debate</em>.</p>
+    <p><strong>Stage 3 — Judgment.</strong> A fourth model sees everything — question, answers, critiques — and scores each answer. This pattern is called <em>LLM-as-judge</em>.</p>
+    <p><strong>Known limitation:</strong> models share training data, so they share blind spots. Cross-checking catches sloppy errors well, and shared misconceptions poorly. Watch for cases where all three agree and are all wrong — those are the most instructive.</p>
+  </div>
+
+  <footer>Static page &middot; your key and questions go directly from your browser to the model server you chose (OpenRouter or your own) — nowhere else.</footer>
+</div>
+
+<script>
+(function () {
+  const $ = id => document.getElementById(id);
+  const OPENROUTER = "https://openrouter.ai/api/v1";
+  const LS = { key: "xck_apikey", m1: "xck_m1", m2: "xck_m2", m3: "xck_m3", mj: "xck_mj", base: "xck_base", prov: "xck_prov" };
+
+  // ---------- settings persistence ----------
+  $("apikey").value = localStorage.getItem(LS.key) || "";
+  $("apikey").addEventListener("change", () => localStorage.setItem(LS.key, $("apikey").value.trim()));
+  $("baseurl").value = localStorage.getItem(LS.base) || "";
+  $("provider").value = localStorage.getItem(LS.prov) || "openrouter";
+
+  function apiBase() {
+    if ($("provider").value === "custom") {
+      let b = $("baseurl").value.trim().replace(/\/+$/, "");
+      return b || OPENROUTER;
+    }
+    return OPENROUTER;
+  }
+  function syncProviderUI() {
+    const custom = $("provider").value === "custom";
+    $("baseurl-row").style.display = custom ? "" : "none";
+    $("key-optional").style.display = custom ? "" : "none";
+    $("or-hint").style.display = custom ? "none" : "";
+  }
+  syncProviderUI();
+  $("provider").addEventListener("change", () => { localStorage.setItem(LS.prov, $("provider").value); syncProviderUI(); loadModels(); });
+  $("baseurl").addEventListener("change", () => { localStorage.setItem(LS.base, $("baseurl").value.trim()); loadModels(); });
+
+  // ---------- model list ----------
+  const PREFS = {
+    m1: ["kimi-k2", "kimi"],
+    m2: ["deepseek-chat", "deepseek-r1", "deepseek"],
+    m3: ["qwen3", "qwen"],
+    mj: ["glm", "llama", "mistral-large", "gemma"]
+  };
+  let models = [];
+
+  async function loadModels() {
+    try {
+      const key = $("apikey").value.trim();
+      const r = await fetch(apiBase() + "/models", key ? { headers: { "Authorization": "Bearer " + key } } : undefined);
+      const j = await r.json();
+      models = (j.data || [])
+        .filter(m => m.id && !/(embed|whisper|tts|audio|image|vision-only)/i.test(m.id))
+        .map(m => m.id)
+        .sort();
+    } catch (e) { models = []; }
+    if (!models.length && apiBase() === OPENROUTER) {
+      models = ["moonshotai/kimi-latest", "deepseek/deepseek-chat", "qwen/qwen3.5-plus-20260420", "z-ai/glm-5.2-20260616"];
+    }
+    if (!models.length) {
+      models = ["(could not reach your server — check the base URL and CORS)"];
+    }
+    for (const sel of ["m1", "m2", "m3", "mj"]) {
+      const el = $(sel);
+      el.innerHTML = models.map(m => `<option value="${m}">${m}</option>`).join("");
+      const saved = localStorage.getItem(LS[sel]);
+      let pick = saved && models.includes(saved) ? saved : null;
+      if (!pick) {
+        for (const p of PREFS[sel]) {
+          const hit = models.find(m => m.toLowerCase().includes(p));
+          if (hit) { pick = hit; break; }
+        }
+      }
+      if (pick) el.value = pick;
+      el.addEventListener("change", () => localStorage.setItem(LS[sel], el.value));
+    }
+  }
+  loadModels();
+
+  // ---------- model server call (OpenAI-compatible) ----------
+  async function ask(model, messages, maxTokens) {
+    const key = $("apikey").value.trim();
+    const base = apiBase();
+    if (!key && base === OPENROUTER) throw new Error("Please paste your OpenRouter API key in Setup first.");
+    const headers = { "Content-Type": "application/json", "HTTP-Referer": location.origin, "X-Title": "LLM Cross-Checker" };
+    if (key) headers["Authorization"] = "Bearer " + key;
+    const r = await fetch(base + "/chat/completions", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ model, messages, max_tokens: maxTokens || 1200 })
+    });
+    if (!r.ok) {
+      let msg = r.status + " " + r.statusText;
+      try { const e = await r.json(); msg = (e.error && e.error.message) || msg; } catch (_) {}
+      throw new Error(model + ": " + msg);
+    }
+    const j = await r.json();
+    return (j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content || "").trim();
+  }
+
+  // ---------- UI builders ----------
+  function stage(title) {
+    const div = document.createElement("div");
+    div.className = "stage";
+    div.innerHTML = `<div class="stage-title">${title} <span class="badge running"><span class="spinner"></span></span></div><div class="body"></div>`;
+    $("pipeline").appendChild(div);
+    return {
+      body: div.querySelector(".body"),
+      done() { div.querySelector(".badge").className = "badge done"; div.querySelector(".badge").textContent = "done"; },
+      fail() { div.querySelector(".badge").className = "badge error"; div.querySelector(".badge").textContent = "error"; }
+    };
+  }
+  function answerCard(model) {
+    const d = document.createElement("div");
+    d.className = "answer";
+    d.innerHTML = `<h3>${model}</h3><div class="content"><span class="spinner"></span></div>`;
+    return d;
+  }
+  const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+
+  // ---------- pipeline ----------
+  $("clear").addEventListener("click", () => { $("pipeline").innerHTML = ""; });
+
+  $("run").addEventListener("click", async () => {
+    const q = $("question").value.trim();
+    if (!q) { alert("Type a question first."); return; }
+    $("run").disabled = true;
+    $("pipeline").innerHTML = "";
+    const contenders = [$("m1").value, $("m2").value, $("m3").value];
+    const judge = $("mj").value;
+
+    try {
+      // Stage 1 — independent answers
+      const s1 = stage("Stage 1 · Independent answers");
+      const grid1 = document.createElement("div"); grid1.className = "answers"; s1.body.appendChild(grid1);
+      const cards = contenders.map(m => { const c = answerCard(m); grid1.appendChild(c); return c; });
+      const answers = await Promise.all(contenders.map((m, i) =>
+        ask(m, [
+          { role: "system", content: "Answer the user's question as well as you can. Be correct first, concise second. Show reasoning briefly when it helps." },
+          { role: "user", content: q }
+        ]).then(a => { cards[i].querySelector(".content").textContent = a; return a; })
+          .catch(e => { cards[i].querySelector(".content").innerHTML = `<span class="error-box">${esc(e.message)}</span>`; return null; })
+      ));
+      if (answers.filter(Boolean).length < 2) { s1.fail(); throw new Error("Fewer than two models answered — cannot cross-check. Check your key/credit and model choices."); }
+      s1.done();
+
+      // Stage 2 — peer critique (each model critiques the other two, anonymized)
+      const s2 = stage("Stage 2 · Peer critique");
+      const grid2 = document.createElement("div"); grid2.className = "answers"; s2.body.appendChild(grid2);
+      const critCards = contenders.map(m => {
+        const c = answerCard(m);
+        c.querySelector("h3").textContent = m + " — critiques the rivals";
+        grid2.appendChild(c); return c;
+      });
+      const critiques = await Promise.all(contenders.map((m, i) => {
+        if (answers[i] === null) { critCards[i].querySelector(".content").textContent = "(skipped — no answer)"; return Promise.resolve(null); }
+        const rivals = answers.map((a, j) => ({ a, j })).filter(x => x.j !== i && x.a !== null);
+        const rivalText = rivals.map((x, k) => `--- Rival answer ${String.fromCharCode(65 + k)} ---\n${x.a}`).join("\n\n");
+        return ask(m, [
+          { role: "system", content: "You are reviewing answers written by other AI models to the same question. Identify concrete errors, unsupported claims, and important omissions in each rival answer. Be specific and fair; say so explicitly if an answer looks fully correct." },
+          { role: "user", content: `Question:\n${q}\n\n${rivalText}\n\nCritique each rival answer.` }
+        ], 900).then(c => { critCards[i].querySelector(".content").textContent = c; return c; })
+          .catch(e => { critCards[i].querySelector(".content").innerHTML = `<span class="error-box">${esc(e.message)}</span>`; return null; });
+      }));
+      s2.done();
+
+      // Stage 3 — judge
+      const s3 = stage("Stage 3 · Judge verdict (" + esc(judge) + ")");
+      const vCard = document.createElement("div"); vCard.className = "card verdict";
+      vCard.innerHTML = `<div class="content"><span class="spinner"></span></div>`;
+      s3.body.appendChild(vCard);
+
+      const live = contenders.map((m, i) => ({ m, i })).filter(x => answers[x.i] !== null);
+      const packet = live.map((x, k) =>
+        `=== Answer ${k + 1} ===\n${answers[x.i]}`
+      ).join("\n\n");
+      const critPacket = critiques.filter(Boolean).map((c, k) => `--- Critique set ${k + 1} ---\n${c}`).join("\n\n");
+
+      const judgeRaw = await ask(judge, [
+        { role: "system", content: "You are an impartial judge. You will see a question, several anonymized answers, and peer critiques. Score each answer 0-10 for correctness and completeness. Respond with ONLY a JSON object: {\"scores\":[{\"answer\":1,\"score\":8,\"reason\":\"...\"}],\"winner\":1,\"verdict\":\"one-paragraph explanation\"}" },
+        { role: "user", content: `Question:\n${q}\n\nAnswers:\n${packet}\n\nPeer critiques:\n${critPacket}\n\nReturn the JSON verdict.` }
+      ], 900);
+
+      let verdict = null;
+      try {
+        const jsonMatch = judgeRaw.match(/\{[\s\S]*\}/);
+        verdict = JSON.parse(jsonMatch ? jsonMatch[0] : judgeRaw);
+      } catch (_) {}
+
+      if (verdict && verdict.scores) {
+        let html = "";
+        for (const sc of verdict.scores) {
+          const idx = (sc.answer | 0) - 1;
+          const modelName = live[idx] ? live[idx].m : ("Answer " + sc.answer);
+          html += `<div class="score-row">
+              <div class="score-model">${esc(modelName)}</div>
+              <div class="score-bar-wrap"><div class="score-bar" style="width:${Math.max(0, Math.min(10, sc.score)) * 10}%"></div></div>
+              <div class="score-num">${sc.score}/10</div>
+            </div>
+            <div class="hint" style="margin:0 0 10px">${esc(String(sc.reason || ""))}</div>`;
+        }
+        const wIdx = (verdict.winner | 0) - 1;
+        const wName = live[wIdx] ? live[wIdx].m : "?";
+        html += `<div class="winner-line">Winner: <strong>${esc(wName)}</strong></div>
+                 <p style="font-size:14px">${esc(String(verdict.verdict || ""))}</p>`;
+        vCard.querySelector(".content").innerHTML = html;
+        // highlight winner card in stage 1
+        if (live[wIdx]) {
+          const origIdx = live[wIdx].i;
+          cards[origIdx].classList.add("winner");
+        }
+      } else {
+        vCard.querySelector(".content").innerHTML =
+          `<div class="hint">The judge didn't return clean JSON — raw verdict below:</div><div class="content" style="margin-top:8px">${esc(judgeRaw)}</div>`;
+      }
+      s3.done();
+    } catch (e) {
+      const err = document.createElement("div");
+      err.className = "card";
+      err.innerHTML = `<div class="error-box">${esc(e.message)}</div>`;
+      $("pipeline").appendChild(err);
+    } finally {
+      $("run").disabled = false;
+    }
+  });
+})();
+</script>
+</body>
+</html>
