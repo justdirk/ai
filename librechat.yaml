@@ -4,7 +4,7 @@ version: 1.2.1
 cache: true
 
 interface:
-  customWelcome: "Ask anything. The right open model is already picked for you."
+  customWelcome: "Ask anything. The right open model is picked for you."
   # Simplified UI: users see a curated model picker and nothing else.
   modelSelect: true
   parameters: false      # hide temperature/top-p etc.
@@ -20,9 +20,15 @@ modelSpecs:
   prioritize: true
   enforce: false
   list:
+    - name: "auto"
+      label: "Auto (picks the best model)"
+      default: true
+      description: "Analyzes your prompt and routes it to the most suitable model"
+      preset:
+        endpoint: "OpenRouter"
+        model: "openrouter/auto"
     - name: "main"
       label: "Main AI (Kimi K2)"
-      default: true
       description: "Frontier open model — best for most questions"
       preset:
         endpoint: "OpenRouter"
@@ -50,6 +56,7 @@ endpoints:
       models:
         default:
           [
+            "openrouter/auto",
             "moonshotai/kimi-k2",
             "deepseek/deepseek-chat",
             "qwen/qwen3-14b",
