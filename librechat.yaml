@@ -89,15 +89,13 @@ endpoints:
 # ---- MCP servers: the models' hands ----
 mcpServers:
   # SCRIBE recorder — reaches the local browser on the Mac via the outbound broker.
-  # Enable once the scribe session deploys the broker and gives us its URL:
-  #   set SCRIBE_BROKER_URL (e.g. https://scribe-broker-production.up.railway.app/mcp)
-  #   as a Railway variable on the librechat service. SCRIBE_MCP_TOKEN is already set.
-  # scribe:
-  #   type: streamable-http
-  #   url: "${SCRIBE_BROKER_URL}"
-  #   headers:
-  #     Authorization: "Bearer ${SCRIBE_MCP_TOKEN}"
-  #   timeout: 120000
+  # URL + token come from Railway variables (kept out of this public repo).
+  scribe-recorder:
+    type: streamable-http
+    url: "${SCRIBE_BROKER_URL}"
+    headers:
+      Authorization: "Bearer ${SCRIBE_MCP_TOKEN}"
+    timeout: 120000
 
   # GitHub — uncomment once GITHUB_PAT is set (read-only token to start).
   # github:
