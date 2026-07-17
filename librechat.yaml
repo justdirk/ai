@@ -14,25 +14,32 @@ balance:
   refillAmount: 2000000
 
 interface:
-  customWelcome: "Ask anything. The right open model is picked for you."
-  # Simplified UI: users see a curated model picker and nothing else.
+  customWelcome: "Ask anything — your prompt gets auto-improved, then answered."
   modelSelect: true
-  parameters: false      # hide temperature/top-p etc.
+  parameters: false
   presets: false
   prompts: false
   bookmarks: false
   multiConvo: false
-  agents: true           # keep agent builder (admin use)
-  endpointsMenu: false   # hide raw endpoint switcher
+  agents: true
+  endpointsMenu: false
 
-# Curated, human-named model choices shown to users instead of a 300-model list.
+# Curated model choices. "Prompt Coach" is the default: it rewrites the user's
+# message into a well-structured prompt (cheap model), shows it, then answers
+# with a frontier model.
 modelSpecs:
   prioritize: true
   enforce: false
   list:
+    - name: "coach"
+      label: "Prompt Coach (improves your prompt, then answers)"
+      default: true
+      description: "Rewrites your message into a great prompt, shows it, then a frontier model answers"
+      preset:
+        endpoint: "Prompt Coach"
+        model: "prompt-coach"
     - name: "auto"
       label: "Auto (picks the best model)"
-      default: true
       description: "Analyzes your prompt and routes it to the most suitable model"
       preset:
         endpoint: "OpenRouter"
@@ -58,8 +65,18 @@ modelSpecs:
 
 endpoints:
   custom:
+    # ---- Prompt Coach middleware: optimize (cheap) -> show -> solve (frontier) ----
+    - name: "Prompt Coach"
+      apiKey: "${PROMPTCOACH_AUTH}"
+      baseURL: "https://promptcoach-production.up.railway.app/v1"
+      models:
+        default: ["prompt-coach"]
+        fetch: false
+      titleConvo: true
+      titleModel: "prompt-coach"
+      modelDisplayLabel: "Prompt Coach"
+
     # ---- OpenRouter: the admin's key (set OPENROUTER_KEY in Railway variables) ----
-    # Users never handle keys; the admin pays and controls access.
     - name: "OpenRouter"
       apiKey: "${OPENROUTER_KEY}"
       baseURL: "https://openrouter.ai/api/v1"
@@ -72,7 +89,7 @@ endpoints:
             "qwen/qwen3-14b",
             "z-ai/glm-4.5",
           ]
-        fetch: false     # curated list only — no 300-model soup
+        fetch: false
       titleConvo: true
       titleModel: "qwen/qwen3-14b"
       modelDisplayLabel: "OpenRouter"
@@ -89,7 +106,6 @@ endpoints:
 # ---- MCP servers: the models' hands ----
 mcpServers:
   # SCRIBE recorder — reaches the local browser on the Mac via the outbound broker.
-  # URL + token come from Railway variables (kept out of this public repo).
   scribe-recorder:
     type: streamable-http
     url: "${SCRIBE_BROKER_URL}"
