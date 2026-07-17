@@ -124,23 +124,30 @@
     <h2>Setup</h2>
     <label for="provider">Where do the models run?</label>
     <select id="provider">
-      <option value="openrouter">OpenRouter (hosted, hundreds of open models)</option>
+      <option value="classroom">Class gateway — no setup needed (default)</option>
+      <option value="openrouter">OpenRouter (bring your own key — all models)</option>
       <option value="custom">My own server (vLLM / Ollama — self-hosted)</option>
     </select>
+    <div class="hint" id="cl-hint">
+      Runs on the course gateway with a shared, budget-capped key — nothing to configure.
+      Cheap open models only; switch to OpenRouter with your own key for the frontier models.
+    </div>
     <div id="baseurl-row" style="display:none">
       <label for="baseurl">Your server's API base URL</label>
       <input type="text" id="baseurl" placeholder="https://your-pod-id-8000.proxy.runpod.net/v1">
       <div class="hint">The OpenAI-compatible endpoint of your vLLM or Ollama server, ending in /v1.</div>
     </div>
-    <label for="apikey">API key <span id="key-optional" style="display:none">(optional for your own server)</span></label>
-    <input type="password" id="apikey" placeholder="sk-or-v1-...">
-    <div class="hint" id="or-hint">
-      Create a free account at <a href="https://openrouter.ai" target="_blank" rel="noopener">openrouter.ai</a>, add a few dollars of credit, then create a key under
-      <a href="https://openrouter.ai/settings/keys" target="_blank" rel="noopener">Settings &rarr; Keys</a>.
-      The key is stored only in this browser (localStorage) and sent only to the model server — this page has no server of its own.
+    <div id="key-row" style="display:none">
+      <label for="apikey">API key <span id="key-optional" style="display:none">(optional for your own server)</span></label>
+      <input type="password" id="apikey" placeholder="sk-or-v1-...">
+      <div class="hint" id="or-hint">
+        Create a free account at <a href="https://openrouter.ai" target="_blank" rel="noopener">openrouter.ai</a>, add a few dollars of credit, then create a key under
+        <a href="https://openrouter.ai/settings/keys" target="_blank" rel="noopener">Settings &rarr; Keys</a>.
+        The key is stored only in this browser (localStorage) and sent only to the model server — this page has no server of its own.
+      </div>
     </div>
     <details>
-      <summary>Choose which models compete (loaded live from OpenRouter)</summary>
+      <summary>Choose which models compete (loaded live)</summary>
       <div class="row">
         <div><label>Contender 1</label><select id="m1"></select></div>
         <div><label>Contender 2</label><select id="m2"></select></div>
@@ -192,30 +199,44 @@ assert add(0, 0) == 0"></textarea>
     <p><strong>Known limitation:</strong> models share training data, so they share blind spots. Cross-checking catches sloppy errors well, and shared misconceptions poorly. Watch for cases where all three agree and are all wrong — those are the most instructive.</p>
   </div>
 
-  <footer>Static page &middot; your key and questions go directly from your browser to the model server you chose (OpenRouter or your own) — nowhere else. Code runs sandboxed in your own browser.</footer>
+  <footer>Static page &middot; your questions go directly from your browser to the model gateway — nowhere else. Code runs sandboxed in your own browser.</footer>
 </div>
 
 <script>
 (function () {
   const $ = id => document.getElementById(id);
   const OPENROUTER = "https://openrouter.ai/api/v1";
+  // Course gateway: shared, budget-capped student key (max exposure: the monthly cap).
+  const CLASSROOM = {
+    base: "https://litellm-production-bbed.up.railway.app/v1",
+    key: "sk-Apkz47wpb2_w9TxHucr7iw"
+  };
   const LS = { key: "xck_apikey", m1: "xck_m1", m2: "xck_m2", m3: "xck_m3", mj: "xck_mj", base: "xck_base", prov: "xck_prov" };
 
   // ---------- settings persistence ----------
   $("apikey").value = localStorage.getItem(LS.key) || "";
   $("apikey").addEventListener("change", () => localStorage.setItem(LS.key, $("apikey").value.trim()));
   $("baseurl").value = localStorage.getItem(LS.base) || "";
-  $("provider").value = localStorage.getItem(LS.prov) || "openrouter";
+  $("provider").value = localStorage.getItem(LS.prov) || "classroom";
 
   function apiBase() {
+    if ($("provider").value === "classroom") return CLASSROOM.base;
     if ($("provider").value === "custom") {
       let b = $("baseurl").value.trim().replace(/\/+$/, "");
       return b || OPENROUTER;
     }
     return OPENROUTER;
   }
+  function effectiveKey() {
+    const typed = $("apikey").value.trim();
+    if ($("provider").value === "classroom") return typed || CLASSROOM.key;
+    return typed;
+  }
   function syncProviderUI() {
-    const custom = $("provider").value === "custom";
+    const prov = $("provider").value;
+    const custom = prov === "custom";
+    $("cl-hint").style.display = prov === "classroom" ? "" : "none";
+    $("key-row").style.display = prov === "classroom" ? "none" : "";
     $("baseurl-row").style.display = custom ? "" : "none";
     $("key-optional").style.display = custom ? "" : "none";
     $("or-hint").style.display = custom ? "none" : "";
@@ -235,7 +256,7 @@ assert add(0, 0) == 0"></textarea>
 
   async function loadModels() {
     try {
-      const key = $("apikey").value.trim();
+      const key = effectiveKey();
       const r = await fetch(apiBase() + "/models", key ? { headers: { "Authorization": "Bearer " + key } } : undefined);
       const j = await r.json();
       models = (j.data || [])
@@ -243,6 +264,9 @@ assert add(0, 0) == 0"></textarea>
         .map(m => m.id)
         .sort();
     } catch (e) { models = []; }
+    if (!models.length && $("provider").value === "classroom") {
+      models = ["qwen3-14b", "deepseek-chat", "glm-4.5", "budget"];
+    }
     if (!models.length && apiBase() === OPENROUTER) {
       models = ["moonshotai/kimi-latest", "deepseek/deepseek-chat", "qwen/qwen3.5-plus-20260420", "z-ai/glm-5.2-20260616"];
     }
@@ -268,7 +292,7 @@ assert add(0, 0) == 0"></textarea>
 
   // ---------- model server call (OpenAI-compatible) ----------
   async function ask(model, messages, maxTokens) {
-    const key = $("apikey").value.trim();
+    const key = effectiveKey();
     const base = apiBase();
     if (!key && base === OPENROUTER) throw new Error("Please paste your OpenRouter API key in Setup first.");
     const headers = { "Content-Type": "application/json", "HTTP-Referer": location.origin, "X-Title": "LLM Cross-Checker" };
@@ -393,7 +417,7 @@ assert add(0, 0) == 0"></textarea>
   // ---------- router: an AI picks the right AIs for this prompt ----------
   function routerCandidates() {
     const pool = models.filter(m =>
-      /(kimi|deepseek|qwen|glm|llama|mistral|gemma|phi|inkling|minimax|command|jamba|sabia)/i.test(m));
+      /(kimi|deepseek|qwen|glm|llama|mistral|gemma|phi|inkling|minimax|command|jamba|sabia|budget|gpt-oss)/i.test(m));
     // prefer shorter (base) ids, cap the list so the router prompt stays small
     return pool.sort((a, b) => a.length - b.length).slice(0, 40);
   }
