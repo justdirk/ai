@@ -1,7 +1,7 @@
 // Prompt Coach middleware — OpenAI-compatible endpoint.
 // Every request: (1) a cheap model rewrites the user's last message into a
-// well-structured prompt, (2) that improved prompt is shown to the user, then
-// (3) a frontier model solves the improved prompt. LibreChat points here as a model.
+// well-structured prompt using a fixed methodology, (2) that improved prompt is
+// shown to the user, then (3) a frontier model solves the improved prompt.
 import http from "node:http";
 
 const GATEWAY = (process.env.GATEWAY_URL || "https://litellm-production-bbed.up.railway.app/v1").replace(/\/+$/, "");
@@ -11,11 +11,21 @@ const OPTIMIZER = process.env.OPTIMIZER_MODEL || "qwen3-14b";
 const SOLVER = process.env.SOLVER_MODEL || "kimi-k2";
 const PORT = process.env.PORT || 8080;
 
+// A disciplined, teachable prompt-engineering methodology (RCTCEF). The optimizer
+// applies each component that adds value, in order, so rewrites are consistently
+// well-structured rather than ad hoc.
 const OPT_SYS =
-  "You are a prompt engineer. Rewrite the user's message into a single, well-structured prompt " +
-  "that will get the best possible answer from an AI. Where helpful, include: role, context, the " +
-  "explicit task, constraints, and the desired output format. Preserve the user's intent and language. " +
-  "Output ONLY the improved prompt text — no preamble, no explanation, no quotes.";
+  "You are an expert prompt engineer. Rewrite the user's message into the single best possible prompt " +
+  "for an AI to answer, following this methodology (RCTCEF). Apply each component that adds value, in order:\n" +
+  "1. ROLE - assign the AI an expert persona fit for the task (\"You are a ...\").\n" +
+  "2. CONTEXT - state relevant background and the user's implied goal.\n" +
+  "3. TASK - one clear, specific instruction of exactly what to produce; split vague asks into concrete sub-goals.\n" +
+  "4. CONSTRAINTS - scope, length, tone, audience, what to avoid, and any assumptions to make explicit rather than guess.\n" +
+  "5. EXAMPLE / REASONING - if it improves quality, request step-by-step reasoning or give a short illustrative example.\n" +
+  "6. FORMAT - the exact output shape (headings, table, list, JSON, word count).\n\n" +
+  "Rules: preserve the user's original intent and language; never invent facts the user did not imply; " +
+  "do NOT answer the question yourself; be concise - a great prompt is complete, not bloated. " +
+  "Output ONLY the improved prompt text - no preamble, no labels, no explanation, no quotes.";
 
 function gw(model, messages, opts = {}) {
   return fetch(GATEWAY + "/chat/completions", {
@@ -37,7 +47,7 @@ http.createServer((req, res) => {
 
   if (req.method === "GET" && req.url.startsWith("/v1/models")) {
     res.writeHead(200, { "Content-Type": "application/json" });
-    return res.end(JSON.stringify({ object: "list", data: [{ id: "prompt-coach", object: "model", owned_by: "scribe" }] }));
+    return res.end(JSON.stringify({ object: "list", data: [{ id: "prompt-coach", object: "model", owned_by: "dirk.it" }] }));
   }
   if (req.method === "GET") { res.writeHead(200); return res.end("prompt-coach ok"); }
   if (req.url.replace(/\/+$/, "") !== "/v1/chat/completions") { res.writeHead(404); return res.end("not found"); }
@@ -61,7 +71,7 @@ http.createServer((req, res) => {
     // Step 1 — cheap optimizer
     let improved = original;
     try {
-      const or = await gw(OPTIMIZER, [{ role: "system", content: OPT_SYS }, { role: "user", content: original }], { max_tokens: 500, temperature: 0.3 });
+      const or = await gw(OPTIMIZER, [{ role: "system", content: OPT_SYS }, { role: "user", content: original }], { max_tokens: 600, temperature: 0.3 });
       const oj = await or.json();
       improved = (oj.choices && oj.choices[0] && oj.choices[0].message && oj.choices[0].message.content || original).trim();
     } catch (e) { /* fall back to original */ }
