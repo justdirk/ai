@@ -1,7 +1,10 @@
 # dirk.it overlay build of bolt.diy
-# Builds bolt.diy from source, applies dirk.it branding (favicon, page title,
-# header wordmark), and serves it exactly like upstream (wrangler on :5173).
-# Pinned to a known-good commit so the branding patches match; bump the SHA to update.
+# Builds bolt.diy from source and applies dirk.it branding:
+#   - favicon.svg / favicon.ico / apple-touch icons (generated at build)
+#   - social share preview (og:image)
+#   - page <title> + meta, header wordmark
+# Serves exactly like upstream (wrangler on :5173).
+# Pinned to a known-good commit so the overlaid source files match; bump to update.
 
 FROM node:22-bookworm-slim AS build
 WORKDIR /app
@@ -9,7 +12,8 @@ ENV HUSKY=0
 ENV CI=true
 
 RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
-RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates perl \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      git ca-certificates librsvg2-bin fonts-dejavu-core python3 python3-pip python3-pil \
   && rm -rf /var/lib/apt/lists/*
 
 # Clone bolt.diy at a known-good commit
@@ -17,13 +21,15 @@ RUN git clone https://github.com/stackblitz-labs/bolt.diy.git . \
   && git checkout 2e254ac19a696394030601bc602f54945b12bfc4
 
 # ---- dirk.it branding overlay ----
-# favicon (browser tab)
+# vector favicon + patched source (title/meta/og + header wordmark)
 COPY favicon.svg public/favicon.svg
-# page <title> + meta description
-RUN sed -i "s/{ title: 'Bolt' }/{ title: 'dirk.it \xE2\x80\x94 build apps' }/" app/routes/_index.tsx \
-  && sed -i "s/Talk with Bolt, an AI assistant from StackBlitz/Build apps in plain language on dirk.it/" app/routes/_index.tsx
-# header logo: replace the two bolt logo images with a dirk.it text wordmark
-RUN perl -0777 -pi -e 's{<img src="/logo-light-styled\.png".*?/>\s*<img src="/logo-dark-styled\.png".*?/>}{<span className="text-2xl font-semibold text-accent">dirk<span className="opacity-50">.it</span></span>}s' app/components/header/Header.tsx
+COPY _index.tsx app/routes/_index.tsx
+COPY Header.tsx app/components/header/Header.tsx
+# raster icons + social preview, generated from the vector mark at build time
+COPY gen_assets.py /tmp/gen_assets.py
+RUN rsvg-convert public/favicon.svg -w 512 -h 512 -o /tmp/mark512.png \
+  && python3 /tmp/gen_assets.py \
+  && rm -f /tmp/gen_assets.py /tmp/mark512.png
 
 # ---- build ----
 RUN pnpm install --frozen-lockfile
