@@ -17,7 +17,11 @@ export function Header() {
     >
       <div className="flex items-center gap-2 z-logo text-bolt-elements-textPrimary cursor-pointer">
         <div className="i-ph:sidebar-simple-duotone text-xl" />
-        <a href="/" className="text-2xl font-semibold text-accent flex items-center">
+        <a
+          href="https://justdirk.github.io/ai/portal.html"
+          title="Back to dirk.it workspace"
+          className="text-2xl font-semibold text-accent flex items-center"
+        >
           <span className="text-2xl font-semibold text-accent">dirk<span className="opacity-50">.it</span></span>
         </a>
       </div>
