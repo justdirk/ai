@@ -147,7 +147,7 @@
         <div><label>Contender 3</label><select id="m3"></select></div>
         <div><label>Judge</label><select id="mj"></select></div>
       </div>
-      <div class="hint">Defaults pick Kimi, DeepSeek and Qwen when available. The judge should ideally be a model that is not competing.</div>
+      <div class="hint">Defaults pick Kimi, DeepSeek and Qwen when available. The judge should ideally be a model that is not competing. With auto-select on, the router fills these for you per prompt.</div>
     </details>
   </div>
 
@@ -172,6 +172,10 @@ assert add(0, 0) == 0"></textarea>
     </div>
     <label for="question">Task / question</label>
     <textarea id="question" placeholder="Try something with a verifiable answer, e.g. a math problem, a coding task, or a factual question — then watch where the models disagree."></textarea>
+    <label style="display:flex;align-items:center;gap:8px;margin-top:10px;cursor:pointer">
+      <input type="checkbox" id="autosel" checked style="width:auto">
+      Auto-select models — a router AI analyzes your prompt and picks the best contenders and judge
+    </label>
     <button id="run">Run cross-check</button>
     <button id="clear" class="secondary" style="margin-left:8px">Clear</button>
   </div>
@@ -180,6 +184,7 @@ assert add(0, 0) == 0"></textarea>
 
   <div class="card explain">
     <h2>How this works (the part worth learning)</h2>
+    <p><strong>Stage 0 — Routing.</strong> With auto-select on, a small fast model reads your prompt and picks which models should compete and which should judge — choosing for capability fit and lab diversity. This pattern is called <em>model routing</em>; production AI systems use it to send each request to the cheapest model that can handle it.</p>
     <p><strong>Stage 1 — Independent answers.</strong> The same question goes to three models in parallel. Diversity matters: models trained by different labs make different mistakes.</p>
     <p><strong>Stage 2 — Peer critique.</strong> Each model receives the two rival answers (anonymized, so no brand bias) and is asked to find errors and omissions. This is the "check each other's work" step — in the literature it's called <em>multi-agent debate</em>.</p>
     <p><strong>Stage 3 — Judgment.</strong> A fourth model sees everything — question, answers, critiques — and scores each answer. This pattern is called <em>LLM-as-judge</em>.</p>
@@ -385,8 +390,43 @@ assert add(0, 0) == 0"></textarea>
     return h;
   }
 
+  // ---------- router: an AI picks the right AIs for this prompt ----------
+  function routerCandidates() {
+    const pool = models.filter(m =>
+      /(kimi|deepseek|qwen|glm|llama|mistral|gemma|phi|inkling|minimax|command|jamba|sabia)/i.test(m));
+    // prefer shorter (base) ids, cap the list so the router prompt stays small
+    return pool.sort((a, b) => a.length - b.length).slice(0, 40);
+  }
+  function pickRouterModel() {
+    const prefs = ["qwen3-14b", "gemma", "phi", "glm", "qwen"];
+    for (const p of prefs) { const hit = models.find(m => m.toLowerCase().includes(p)); if (hit) return hit; }
+    return models[0];
+  }
+  async function routeModels(q, isCoding, lang) {
+    const candidates = routerCandidates();
+    if (candidates.length < 4) throw new Error("not enough candidate models");
+    const routerModel = pickRouterModel();
+    const raw = await ask(routerModel, [
+      { role: "system", content:
+        "You are a model router. Given a user task, choose from the AVAILABLE MODELS: " +
+        "exactly 3 'contenders' best suited to solve it, and 1 'judge' to referee (the judge must NOT be a contender, and should be strong at evaluation). " +
+        "Prefer diversity: pick contenders from different labs/families when possible (kimi=Moonshot, deepseek=DeepSeek, qwen=Alibaba, glm=Z.ai, llama=Meta, mistral=Mistral, gemma=Google, inkling=Thinking Machines, sabia=Maritaca/Portuguese). " +
+        "Use ONLY exact IDs from the list. Respond with ONLY JSON: {\"contenders\":[\"id1\",\"id2\",\"id3\"],\"judge\":\"id4\",\"reason\":\"one short sentence\"}" },
+      { role: "user", content:
+        "Task type: " + (isCoding ? ("coding in " + lang) : "general question") + "\n" +
+        "Task:\n" + q + "\n\nAVAILABLE MODELS:\n" + candidates.join("\n") }
+    ], 300);
+    const m = raw.match(/\{[\s\S]*\}/);
+    const j = JSON.parse(m ? m[0] : raw);
+    const valid = id => typeof id === "string" && models.includes(id);
+    if (!Array.isArray(j.contenders) || j.contenders.filter(valid).length !== 3 || !valid(j.judge)) {
+      throw new Error("router returned invalid model ids");
+    }
+    return { contenders: j.contenders, judge: j.judge, reason: String(j.reason || ""), routerModel };
+  }
+
   // exposed for debugging/testing
-  window._xck = { extractCode, execCode, runInWorker };
+  window._xck = { extractCode, execCode, runInWorker, routeModels, routerCandidates };
 
   // ---------- coding pipeline: solutions -> execution (objective) -> judge review ----------
   async function runCoding(q, contenders, judge) {
@@ -471,8 +511,32 @@ assert add(0, 0) == 0"></textarea>
     if (!q) { alert("Type a question first."); return; }
     $("run").disabled = true;
     $("pipeline").innerHTML = "";
-    const contenders = [$("m1").value, $("m2").value, $("m3").value];
-    const judge = $("mj").value;
+    let contenders = [$("m1").value, $("m2").value, $("m3").value];
+    let judge = $("mj").value;
+
+    // Stage 0 — router picks the models (optional)
+    if ($("autosel").checked) {
+      const s0 = stage("Stage 0 · Model selection (router)");
+      const rCard = document.createElement("div"); rCard.className = "card";
+      rCard.innerHTML = '<div class="content"><span class="spinner"></span></div>';
+      s0.body.appendChild(rCard);
+      try {
+        const r = await routeModels(q, $("mode").value === "coding", $("lang") ? $("lang").value : "");
+        contenders = r.contenders; judge = r.judge;
+        ["m1", "m2", "m3"].forEach((sel, i) => { $(sel).value = contenders[i]; localStorage.setItem(LS[sel], contenders[i]); });
+        $("mj").value = judge; localStorage.setItem(LS.mj, judge);
+        rCard.querySelector(".content").innerHTML =
+          '<div class="hint" style="margin:0">Router (' + esc(r.routerModel) + ") picked:</div>" +
+          '<div class="tline ok">contenders: ' + esc(contenders.join("  ·  ")) + "</div>" +
+          '<div class="tline ok">judge: ' + esc(judge) + "</div>" +
+          '<p style="font-size:13.5px;margin:6px 0 0">' + esc(r.reason) + "</p>";
+        s0.done();
+      } catch (e) {
+        rCard.querySelector(".content").innerHTML =
+          '<div class="hint" style="margin:0">Router unavailable (' + esc(e.message) + ") — using your manual selection.</div>";
+        s0.done();
+      }
+    }
 
     if ($("mode").value === "coding") {
       try { await runCoding(q, contenders, judge); }
