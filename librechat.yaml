@@ -3,6 +3,16 @@
 version: 1.2.1
 cache: true
 
+# Per-user token credits: hard stop when spent, refills weekly.
+# 1,000,000 credits ~= $1 of token spend. Students get ~$2/week.
+balance:
+  enabled: true
+  startBalance: 2000000
+  autoRefillEnabled: true
+  refillIntervalValue: 7
+  refillIntervalUnit: "days"
+  refillAmount: 2000000
+
 interface:
   customWelcome: "Ask anything. The right open model is picked for you."
   # Simplified UI: users see a curated model picker and nothing else.
