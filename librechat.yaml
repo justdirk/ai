@@ -1,20 +1,51 @@
 # LibreChat configuration for Dirk — served via CONFIG_PATH from GitHub.
-# Edit this file in the justdirk/ai repo; LibreChat picks it up on restart.
+# Edit this file in the justdirk/ai repo; changes apply on the next restart/redeploy.
 version: 1.2.1
 cache: true
 
 interface:
-  customWelcome: "Your models, your tools. Kimi, DeepSeek & friends with GitHub/Supabase access."
+  customWelcome: "Ask anything. The right open model is already picked for you."
+  # Simplified UI: users see a curated model picker and nothing else.
   modelSelect: true
-  agents: true
+  parameters: false      # hide temperature/top-p etc.
+  presets: false
+  prompts: false
+  bookmarks: false
+  multiConvo: false
+  agents: true           # keep agent builder (admin use)
+  endpointsMenu: false   # hide raw endpoint switcher
+
+# Curated, human-named model choices shown to users instead of a 300-model list.
+modelSpecs:
+  prioritize: true
+  enforce: false
+  list:
+    - name: "main"
+      label: "Main AI (Kimi K2)"
+      default: true
+      description: "Frontier open model — best for most questions"
+      preset:
+        endpoint: "OpenRouter"
+        model: "moonshotai/kimi-k2"
+    - name: "reasoner"
+      label: "Deep Reasoner (DeepSeek)"
+      description: "Slower, shows step-by-step thinking — math, analysis"
+      preset:
+        endpoint: "OpenRouter"
+        model: "deepseek/deepseek-chat"
+    - name: "fast"
+      label: "Quick (Qwen3 14B)"
+      description: "Fast and cheap for simple questions"
+      preset:
+        endpoint: "OpenRouter"
+        model: "qwen/qwen3-14b"
 
 endpoints:
   custom:
-    # ---- OpenRouter: hundreds of open models incl. Kimi K2/K3, DeepSeek, Qwen ----
-    # apiKey "user_provided": paste your OpenRouter key once in the LibreChat UI
-    # (stored encrypted in your own MongoDB).
+    # ---- OpenRouter: the admin's key (set OPENROUTER_KEY in Railway variables) ----
+    # Users never handle keys; the admin pays and controls access.
     - name: "OpenRouter"
-      apiKey: "user_provided"
+      apiKey: "${OPENROUTER_KEY}"
       baseURL: "https://openrouter.ai/api/v1"
       models:
         default:
@@ -24,7 +55,7 @@ endpoints:
             "qwen/qwen3-14b",
             "z-ai/glm-4.5",
           ]
-        fetch: true
+        fetch: false     # curated list only — no 300-model soup
       titleConvo: true
       titleModel: "qwen/qwen3-14b"
       modelDisplayLabel: "OpenRouter"
@@ -32,7 +63,7 @@ endpoints:
     # ---- Your own server (uncomment when your RunPod/Ollama endpoint exists) ----
     # - name: "My GPU"
     #   apiKey: "none"
-    #   baseURL: "${MY_GPU_BASE_URL}"   # e.g. https://<pod-id>-11434.proxy.runpod.net/v1
+    #   baseURL: "${MY_GPU_BASE_URL}"
     #   models:
     #     default: ["qwen3:14b"]
     #     fetch: true
