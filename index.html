@@ -187,6 +187,25 @@ assert add(0, 0) == 0"></textarea>
     <button id="clear" class="secondary" style="margin-left:8px">Clear</button>
   </div>
 
+  <div class="card" id="admin-card" style="display:none">
+    <h2>Admin · Benchmark</h2>
+    <div class="hint" style="margin:0 0 8px">Compare setups on your own golden set: accuracy, tokens, speed. Visible only via the #admin URL.</div>
+    <label for="bm-set">Eval set — one per line: question :: expected answer</label>
+    <textarea id="bm-set" style="min-height:120px" placeholder="What is 17 * 23? :: 391
+Capital of Australia? :: Canberra
+Does the moon orbit the sun directly? :: no"></textarea>
+    <label for="bm-models">Single-model setups — comma-separated model IDs</label>
+    <input type="text" id="bm-models" placeholder="qwen3-14b, deepseek-chat, budget">
+    <label style="display:flex;align-items:center;gap:8px;margin-top:8px;cursor:pointer">
+      <input type="checkbox" id="bm-cross" checked style="width:auto">
+      Also benchmark the cross-check pipeline (uses the contenders + judge from Setup)
+    </label>
+    <label for="bm-judge">Grading judge (checks answers against expected)</label>
+    <select id="bm-judge"></select>
+    <button id="bm-run">Run benchmark</button>
+    <div id="bm-out" style="margin-top:14px"></div>
+  </div>
+
   <div id="pipeline"></div>
 
   <div class="card explain">
@@ -287,16 +306,18 @@ assert add(0, 0) == 0"></textarea>
       if (pick) el.value = pick;
       el.addEventListener("change", () => localStorage.setItem(LS[sel], el.value));
     }
+    if (typeof syncAdminUI === "function") syncAdminUI();
   }
   loadModels();
 
   // ---------- model server call (OpenAI-compatible) ----------
-  async function ask(model, messages, maxTokens) {
+  async function askFull(model, messages, maxTokens) {
     const key = effectiveKey();
     const base = apiBase();
     if (!key && base === OPENROUTER) throw new Error("Please paste your OpenRouter API key in Setup first.");
     const headers = { "Content-Type": "application/json", "HTTP-Referer": location.origin, "X-Title": "LLM Cross-Checker" };
     if (key) headers["Authorization"] = "Bearer " + key;
+    const t0 = performance.now();
     const r = await fetch(base + "/chat/completions", {
       method: "POST",
       headers,
@@ -308,7 +329,12 @@ assert add(0, 0) == 0"></textarea>
       throw new Error(model + ": " + msg);
     }
     const j = await r.json();
-    return (j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content || "").trim();
+    const text = (j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content || "").trim();
+    const tokens = (j.usage && j.usage.total_tokens) || Math.round((JSON.stringify(messages).length + text.length) / 4);
+    return { text, tokens, ms: performance.now() - t0 };
+  }
+  async function ask(model, messages, maxTokens) {
+    return (await askFull(model, messages, maxTokens)).text;
   }
 
   // ---------- UI builders ----------
@@ -449,8 +475,85 @@ assert add(0, 0) == 0"></textarea>
     return { contenders: j.contenders, judge: j.judge, reason: String(j.reason || ""), routerModel };
   }
 
+  // ---------- Admin · Benchmark (visible via #admin) ----------
+  function syncAdminUI() {
+    $("admin-card").style.display = location.hash === "#admin" ? "" : "none";
+    const bj = $("bm-judge");
+    if (bj && !bj.options.length && models.length) {
+      bj.innerHTML = models.map(m => '<option value="' + m + '">' + m + "</option>").join("");
+      const g = models.find(m => /glm|gemma|qwen/i.test(m)); if (g) bj.value = g;
+      if (!$("bm-models").value) $("bm-models").value = models.slice(0, 3).join(", ");
+    }
+  }
+  window.addEventListener("hashchange", syncAdminUI);
+
+  async function crossCheckAnswer(q) {
+    // compact, non-visual version of the pipeline: 3 answers -> judge picks best
+    const cs = [$("m1").value, $("m2").value, $("m3").value];
+    const jm = $("mj").value;
+    let tokens = 0; const t0 = performance.now();
+    const answers = await Promise.all(cs.map(m =>
+      askFull(m, [{ role: "system", content: "Answer concisely and correctly." }, { role: "user", content: q }], 400)
+        .then(r => { tokens += r.tokens; return r.text; }).catch(() => null)));
+    const live = answers.filter(Boolean);
+    if (!live.length) throw new Error("no answers");
+    const pick = await askFull(jm, [
+      { role: "system", content: 'Pick the best answer. Respond ONLY with JSON: {"best": <1-based index>}' },
+      { role: "user", content: "Question:\n" + q + "\n\n" + live.map((a, i) => "Answer " + (i + 1) + ":\n" + a).join("\n\n") }
+    ], 50);
+    tokens += pick.tokens;
+    let idx = 0;
+    try { idx = ((JSON.parse(pick.text.match(/\{[\s\S]*\}/)[0]).best | 0) - 1); } catch (_) {}
+    return { text: live[Math.max(0, Math.min(live.length - 1, idx))], tokens, ms: performance.now() - t0 };
+  }
+
+  async function gradeAnswer(judge, q, expected, answer) {
+    const r = await askFull(judge, [
+      { role: "system", content: 'You are a strict grader. Decide if the candidate answer is correct given the expected answer (meaning matters, wording does not). Respond ONLY with JSON: {"correct": true} or {"correct": false}' },
+      { role: "user", content: "Question: " + q + "\nExpected: " + expected + "\nCandidate: " + answer }
+    ], 30);
+    try { return !!JSON.parse(r.text.match(/\{[\s\S]*\}/)[0]).correct; } catch (_) { return false; }
+  }
+
+  async function runBenchmark() {
+    const out = $("bm-out");
+    const lines = $("bm-set").value.split("\n").map(s => s.trim()).filter(Boolean)
+      .map(l => { const p = l.split("::"); return p.length >= 2 ? { q: p[0].trim(), exp: p.slice(1).join("::").trim() } : null; })
+      .filter(Boolean);
+    if (!lines.length) { out.innerHTML = '<span class="error-box">Add eval lines first: question :: expected answer</span>'; return; }
+    const setups = $("bm-models").value.split(",").map(s => s.trim()).filter(s => s && models.includes(s))
+      .map(m => ({ name: m, run: q => askFull(m, [{ role: "system", content: "Answer concisely and correctly." }, { role: "user", content: q }], 400) }));
+    if ($("bm-cross").checked) setups.push({ name: "cross-check pipeline", run: q => crossCheckAnswer(q) });
+    if (!setups.length) { out.innerHTML = '<span class="error-box">No valid setups — check the model IDs.</span>'; return; }
+    const judge = $("bm-judge").value;
+    $("bm-run").disabled = true;
+    const stats = setups.map(s => ({ name: s.name, correct: 0, tokens: 0, ms: 0, errors: 0 }));
+    try {
+      for (let qi = 0; qi < lines.length; qi++) {
+        for (let si = 0; si < setups.length; si++) {
+          out.innerHTML = '<div class="hint">Running… question ' + (qi + 1) + "/" + lines.length + " · setup " + (si + 1) + "/" + setups.length + '</div>';
+          try {
+            const r = await setups[si].run(lines[qi].q);
+            stats[si].tokens += r.tokens; stats[si].ms += r.ms;
+            if (await gradeAnswer(judge, lines[qi].q, lines[qi].exp, r.text)) stats[si].correct++;
+          } catch (e) { stats[si].errors++; }
+        }
+      }
+      let h = '<table style="width:100%;border-collapse:collapse;font-size:13.5px">' +
+        '<tr style="color:var(--accent);text-align:left"><th style="padding:6px 8px">Setup</th><th>Accuracy</th><th>Tokens</th><th>Avg sec/question</th></tr>';
+      for (const s of stats.slice().sort((a, b) => b.correct - a.correct)) {
+        h += '<tr style="border-top:1px solid var(--border)"><td style="padding:6px 8px">' + esc(s.name) + "</td>" +
+             "<td>" + s.correct + "/" + lines.length + (s.errors ? ' <span class="error-box">(' + s.errors + " errors)</span>" : "") + "</td>" +
+             "<td>" + s.tokens.toLocaleString() + "</td>" +
+             "<td>" + (s.ms / lines.length / 1000).toFixed(1) + "</td></tr>";
+      }
+      h += "</table><div class='hint'>Accuracy graded by " + esc(judge) + " against your expected answers. Tokens ≈ relative cost — see exact spend per key in the gateway dashboard.</div>";
+      out.innerHTML = h;
+    } finally { $("bm-run").disabled = false; }
+  }
+
   // exposed for debugging/testing
-  window._xck = { extractCode, execCode, runInWorker, routeModels, routerCandidates };
+  window._xck = { extractCode, execCode, runInWorker, routeModels, routerCandidates, runBenchmark };
 
   // ---------- coding pipeline: solutions -> execution (objective) -> judge review ----------
   async function runCoding(q, contenders, judge) {
@@ -529,6 +632,8 @@ assert add(0, 0) == 0"></textarea>
 
   // ---------- pipeline ----------
   $("clear").addEventListener("click", () => { $("pipeline").innerHTML = ""; });
+  $("bm-run").addEventListener("click", runBenchmark);
+  syncAdminUI();
 
   $("run").addEventListener("click", async () => {
     const q = $("question").value.trim();
