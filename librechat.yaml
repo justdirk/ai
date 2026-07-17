@@ -87,12 +87,22 @@ endpoints:
     #   modelDisplayLabel: "Self-hosted"
 
 # ---- MCP servers: the models' hands ----
-# Uncomment once GITHUB_PAT is set as a Railway variable on the librechat service.
-# Create the token at github.com/settings/personal-access-tokens — start read-only.
-# mcpServers:
-#   github:
-#     type: streamable-http
-#     url: "https://api.githubcopilot.com/mcp/"
-#     headers:
-#       Authorization: "Bearer ${GITHUB_PAT}"
-#     timeout: 60000
+mcpServers:
+  # SCRIBE recorder — reaches the local browser on the Mac via the outbound broker.
+  # Enable once the scribe session deploys the broker and gives us its URL:
+  #   set SCRIBE_BROKER_URL (e.g. https://scribe-broker-production.up.railway.app/mcp)
+  #   as a Railway variable on the librechat service. SCRIBE_MCP_TOKEN is already set.
+  # scribe:
+  #   type: streamable-http
+  #   url: "${SCRIBE_BROKER_URL}"
+  #   headers:
+  #     Authorization: "Bearer ${SCRIBE_MCP_TOKEN}"
+  #   timeout: 120000
+
+  # GitHub — uncomment once GITHUB_PAT is set (read-only token to start).
+  # github:
+  #   type: streamable-http
+  #   url: "https://api.githubcopilot.com/mcp/"
+  #   headers:
+  #     Authorization: "Bearer ${GITHUB_PAT}"
+  #   timeout: 60000
