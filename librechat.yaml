@@ -1,0 +1,50 @@
+# LibreChat configuration for Dirk — served via CONFIG_PATH from GitHub.
+# Edit this file in the justdirk/ai repo; LibreChat picks it up on restart.
+version: 1.2.1
+cache: true
+
+interface:
+  customWelcome: "Your models, your tools. Kimi, DeepSeek & friends with GitHub/Supabase access."
+  modelSelect: true
+  agents: true
+
+endpoints:
+  custom:
+    # ---- OpenRouter: hundreds of open models incl. Kimi K2/K3, DeepSeek, Qwen ----
+    # apiKey "user_provided": paste your OpenRouter key once in the LibreChat UI
+    # (stored encrypted in your own MongoDB).
+    - name: "OpenRouter"
+      apiKey: "user_provided"
+      baseURL: "https://openrouter.ai/api/v1"
+      models:
+        default:
+          [
+            "moonshotai/kimi-k2",
+            "deepseek/deepseek-chat",
+            "qwen/qwen3-14b",
+            "z-ai/glm-4.5",
+          ]
+        fetch: true
+      titleConvo: true
+      titleModel: "qwen/qwen3-14b"
+      modelDisplayLabel: "OpenRouter"
+
+    # ---- Your own server (uncomment when your RunPod/Ollama endpoint exists) ----
+    # - name: "My GPU"
+    #   apiKey: "none"
+    #   baseURL: "${MY_GPU_BASE_URL}"   # e.g. https://<pod-id>-11434.proxy.runpod.net/v1
+    #   models:
+    #     default: ["qwen3:14b"]
+    #     fetch: true
+    #   modelDisplayLabel: "Self-hosted"
+
+# ---- MCP servers: the models' hands ----
+# Uncomment once GITHUB_PAT is set as a Railway variable on the librechat service.
+# Create the token at github.com/settings/personal-access-tokens — start read-only.
+# mcpServers:
+#   github:
+#     type: streamable-http
+#     url: "https://api.githubcopilot.com/mcp/"
+#     headers:
+#       Authorization: "Bearer ${GITHUB_PAT}"
+#     timeout: 60000
