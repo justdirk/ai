@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>dirk.it — your AI workspace</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<style>
+  :root {
+    --bg:#0f1117; --panel:#181b24; --panel2:#1f2330; --border:#2c3140;
+    --text:#e8eaf0; --muted:#9aa1b2; --accent:#6ea8fe; --green:#4ade80; --amber:#fbbf24;
+    --radius:16px;
+  }
+  * { box-sizing:border-box; }
+  body {
+    margin:0; padding:0 20px 80px; background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; line-height:1.55;
+  }
+  .wrap { max-width:960px; margin:0 auto; }
+  header { padding:64px 0 8px; text-align:center; }
+  .mark { width:76px; height:76px; margin:0 auto 20px; display:block; }
+  h1 { font-size:34px; margin:0 0 8px; letter-spacing:-0.5px; }
+  h1 .dot { color:var(--accent); }
+  .tag { color:var(--muted); font-size:17px; margin:0 auto 44px; max-width:560px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:18px; }
+  a.card {
+    display:block; text-decoration:none; color:inherit;
+    background:var(--panel); border:1px solid var(--border); border-radius:var(--radius);
+    padding:24px; transition:border-color .18s, transform .18s, box-shadow .18s;
+  }
+  a.card:hover { border-color:var(--accent); transform:translateY(-2px); box-shadow:0 8px 30px rgba(0,0,0,.35); }
+  a.card.soon { opacity:.55; pointer-events:none; }
+  .ic { width:38px; height:38px; margin-bottom:14px; display:block; }
+  .card h2 { font-size:18px; margin:0 0 6px; }
+  .card p { font-size:14px; color:var(--muted); margin:0; }
+  .badge { float:right; font-size:11px; color:var(--amber); border:1px solid var(--amber); border-radius:999px; padding:2px 8px; }
+  .arrow { color:var(--accent); font-size:14px; margin-top:14px; display:inline-block; font-weight:600; }
+  footer { text-align:center; color:var(--muted); font-size:13px; margin-top:56px; }
+  footer a { color:var(--accent); text-decoration:none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <svg class="mark" viewBox="0 0 512 512" aria-hidden="true">
+      <rect width="512" height="512" rx="104" fill="#151823"/>
+      <rect x="10" y="10" width="492" height="492" rx="96" fill="none" stroke="#2c3140" stroke-width="8"/>
+      <g fill="none" stroke="#e8eaf0" stroke-width="58" stroke-linecap="round">
+        <circle cx="238" cy="322" r="88"/>
+        <line x1="326" y1="118" x2="326" y2="410"/>
+      </g>
+      <circle cx="412" cy="410" r="34" fill="#6ea8fe"/>
+    </svg>
+    <h1>dirk<span class="dot">.</span>it</h1>
+    <p class="tag">Your AI workspace — chat, build, and check your work, all on open models you control.</p>
+  </header>
+
+  <div class="grid">
+    <a class="card" href="https://librechat-production-1511.up.railway.app" target="_blank" rel="noopener">
+      <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="#6ea8fe" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+      <h2>Chat</h2>
+      <p>Ask anything. Your prompt is auto-improved into a great one, shown to you, then answered by a frontier model.</p>
+      <span class="arrow">Open chat &rarr;</span>
+    </a>
+
+    <a class="card" href="https://bolt-production-b78b.up.railway.app" target="_blank" rel="noopener">
+      <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+      <h2>Build apps</h2>
+      <p>Describe an app in plain language, watch it build live in the browser, and deploy it to a shareable link.</p>
+      <span class="arrow">Start building &rarr;</span>
+    </a>
+
+    <a class="card" href="index.html" target="_blank" rel="noopener">
+      <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+      <h2>Cross-check &amp; benchmark</h2>
+      <p>Several AIs answer, critique each other's work, and a judge picks the winner. Runs your code against real tests.</p>
+      <span class="arrow">Open cross-checker &rarr;</span>
+    </a>
+
+    <a class="card soon" href="#">
+      <span class="badge">soon</span>
+      <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="#9aa1b2" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>
+      <h2>Record</h2>
+      <p>Capture on-screen lessons and turn them into searchable, timestamped transcripts with OCR.</p>
+      <span class="arrow">Coming soon</span>
+    </a>
+  </div>
+
+  <footer>
+    Built on open models &middot; <a href="https://dirk.it" target="_blank" rel="noopener">dirk.it</a>
+  </footer>
+</div>
+</body>
+</html>
