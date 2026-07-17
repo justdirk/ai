@@ -147,14 +147,14 @@
       </div>
     </div>
     <details>
-      <summary>Choose which models compete (loaded live)</summary>
+      <summary>Choose which models compete (loaded live from OpenRouter)</summary>
       <div class="row">
         <div><label>Contender 1</label><select id="m1"></select></div>
         <div><label>Contender 2</label><select id="m2"></select></div>
         <div><label>Contender 3</label><select id="m3"></select></div>
         <div><label>Judge</label><select id="mj"></select></div>
       </div>
-      <div class="hint">Defaults pick Kimi, DeepSeek and Qwen when available. The judge should ideally be a model that is not competing. With auto-select on, the router fills these for you per prompt.</div>
+      <div class="hint">Defaults pick Kimi, DeepSeek and Qwen when available. The judge should ideally be a model that is not competing.</div>
     </details>
   </div>
 
@@ -210,15 +210,13 @@ Does the moon orbit the sun directly? :: no"></textarea>
 
   <div class="card explain">
     <h2>How this works (the part worth learning)</h2>
-    <p><strong>Stage 0 — Routing.</strong> With auto-select on, a small fast model reads your prompt and picks which models should compete and which should judge — choosing for capability fit and lab diversity. This pattern is called <em>model routing</em>; production AI systems use it to send each request to the cheapest model that can handle it.</p>
     <p><strong>Stage 1 — Independent answers.</strong> The same question goes to three models in parallel. Diversity matters: models trained by different labs make different mistakes.</p>
     <p><strong>Stage 2 — Peer critique.</strong> Each model receives the two rival answers (anonymized, so no brand bias) and is asked to find errors and omissions. This is the "check each other's work" step — in the literature it's called <em>multi-agent debate</em>.</p>
     <p><strong>Stage 3 — Judgment.</strong> A fourth model sees everything — question, answers, critiques — and scores each answer. This pattern is called <em>LLM-as-judge</em>.</p>
-    <p><strong>Coding mode is different — and better.</strong> Code can be <em>executed</em>, so instead of opinions the app runs every solution against your test cases right in the browser. Pass/fail is the score; the judge only comments on style. Objective, checkable feedback like this is called <em>verifiable rewards</em> — it is how models like DeepSeek-R1 were trained to reason.</p>
     <p><strong>Known limitation:</strong> models share training data, so they share blind spots. Cross-checking catches sloppy errors well, and shared misconceptions poorly. Watch for cases where all three agree and are all wrong — those are the most instructive.</p>
   </div>
 
-  <footer>Static page &middot; your questions go directly from your browser to the model gateway — nowhere else. Code runs sandboxed in your own browser.</footer>
+  <footer>Static page &middot; your key and questions go directly from your browser to the model server you chose (OpenRouter or your own) — nowhere else.</footer>
 </div>
 
 <script>
@@ -392,8 +390,8 @@ Does the moon orbit the sun directly? :: no"></textarea>
     "    var py = await ready;",
     "    try { py.runPython(code); }",
     "    catch (err) {",
-    "      var m0 = String(err).split('\\n').filter(Boolean).pop() || String(err);",
-    "      self.postMessage({ fatal: 'code failed to run: ' + m0.slice(0, 300) });",
+    "      var m0 = String(err).split('\\n').filter(Boolean).pop();",
+    "      self.postMessage({ fatal: 'code failed to run: ' + (m0 || err).slice ? (m0 || String(err)).slice(0, 300) : String(err) });",
     "      return;",
     "    }",
     "    for (var i = 0; i < tests.length; i++) {",
@@ -469,10 +467,16 @@ Does the moon orbit the sun directly? :: no"></textarea>
     const m = raw.match(/\{[\s\S]*\}/);
     const j = JSON.parse(m ? m[0] : raw);
     const valid = id => typeof id === "string" && models.includes(id);
-    if (!Array.isArray(j.contenders) || j.contenders.filter(valid).length !== 3 || !valid(j.judge)) {
-      throw new Error("router returned invalid model ids");
+    // de-duplicate: the model sometimes repeats a contender, which would silently
+    // run only 2 distinct models instead of 3.
+    const uniq = [...new Set(Array.isArray(j.contenders) ? j.contenders.filter(valid) : [])];
+    if (uniq.length !== 3 || !valid(j.judge)) {
+      throw new Error("router returned invalid or duplicate model ids");
     }
-    return { contenders: j.contenders, judge: j.judge, reason: String(j.reason || ""), routerModel };
+    // enforce judge != contender, so no model grades its own answer.
+    let judge = j.judge;
+    if (uniq.includes(judge)) judge = models.find(mm => !uniq.includes(mm)) || judge;
+    return { contenders: uniq, judge, reason: String(j.reason || ""), routerModel };
   }
 
   // ---------- Admin · Benchmark (visible via #admin) ----------
@@ -754,7 +758,6 @@ Does the moon orbit the sun directly? :: no"></textarea>
         html += `<div class="winner-line">Winner: <strong>${esc(wName)}</strong></div>
                  <p style="font-size:14px">${esc(String(verdict.verdict || ""))}</p>`;
         vCard.querySelector(".content").innerHTML = html;
-        // highlight winner card in stage 1
         if (live[wIdx]) {
           const origIdx = live[wIdx].i;
           cards[origIdx].classList.add("winner");
