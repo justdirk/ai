@@ -31,6 +31,17 @@ RUN rsvg-convert public/favicon.svg -w 512 -h 512 -o /tmp/mark512.png \
   && python3 /tmp/gen_assets.py \
   && rm -f /tmp/gen_assets.py /tmp/mark512.png
 
+# ---- dirk.it simplification for non-technical users ----
+# Fixed model (Kimi K2 via the dirk.it gateway) + default provider = OpenAILike,
+# so students never pick a model or paste a key.
+RUN sed -i "s/export const DEFAULT_MODEL = 'claude-3-5-sonnet-latest';/export const DEFAULT_MODEL = 'kimi-k2';/" app/utils/constants.ts \
+  && sed -i "s/export const DEFAULT_PROVIDER = llmManager.getDefaultProvider();/export const DEFAULT_PROVIDER = PROVIDER_LIST.find((p) => p.name === 'OpenAILike') ?? llmManager.getDefaultProvider();/" app/utils/constants.ts
+# Trimmed prompt box (no model/API-key controls; keeps the enhance button)
+COPY ChatBox.tsx app/components/chat/ChatBox.tsx
+# Friendlier intro copy
+RUN sed -i 's/Where ideas begin/Build an app by describing it/' app/components/chat/BaseChat.tsx \
+  && sed -i 's/Bring ideas to life in seconds or get help on existing projects./Tell me what to build in plain language and I will write the code and run it live./' app/components/chat/BaseChat.tsx
+
 # ---- build ----
 RUN pnpm install --frozen-lockfile
 RUN NODE_OPTIONS=--max-old-space-size=4096 pnpm run build

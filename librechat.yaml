@@ -15,13 +15,15 @@ balance:
 
 interface:
   customWelcome: "Ask anything — your prompt gets auto-improved, then answered."
-  modelSelect: true
+  # Students get one simple experience (Prompt Coach). No model picker, no agent
+  # builder/marketplace. Re-enable these here if you need them for admin work.
+  modelSelect: false
   parameters: false
   presets: false
   prompts: false
   bookmarks: false
   multiConvo: false
-  agents: true
+  agents: false
   endpointsMenu: false
 
 # Curated model choices. "Prompt Coach" is the default: it rewrites the user's
@@ -94,15 +96,6 @@ endpoints:
       titleModel: "qwen/qwen3-14b"
       modelDisplayLabel: "OpenRouter"
 
-    # ---- Your own server (uncomment when your RunPod/Ollama endpoint exists) ----
-    # - name: "My GPU"
-    #   apiKey: "none"
-    #   baseURL: "${MY_GPU_BASE_URL}"
-    #   models:
-    #     default: ["qwen3:14b"]
-    #     fetch: true
-    #   modelDisplayLabel: "Self-hosted"
-
 # ---- MCP servers: the models' hands ----
 mcpServers:
   # SCRIBE recorder — reaches the local browser on the Mac via the outbound broker.
@@ -112,11 +105,3 @@ mcpServers:
     headers:
       Authorization: "Bearer ${SCRIBE_MCP_TOKEN}"
     timeout: 120000
-
-  # GitHub — uncomment once GITHUB_PAT is set (read-only token to start).
-  # github:
-  #   type: streamable-http
-  #   url: "https://api.githubcopilot.com/mcp/"
-  #   headers:
-  #     Authorization: "Bearer ${GITHUB_PAT}"
-  #   timeout: 60000
