@@ -1,0 +1,16 @@
+{
+  "name": "dirk-coderun",
+  "private": true,
+  "type": "module",
+  "version": "1.0.0",
+  "description": "dirk.it in-chat Python runner — Pyodide (WASM) sandbox, LibreChat code-API compatible",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "pyodide": "^0.26.4"
+  }
+}
