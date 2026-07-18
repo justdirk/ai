@@ -111,13 +111,16 @@ http.createServer((req, res) => {
 
   const path = (req.url || "").split("?")[0].replace(/\/+$/, "") || "/";
 
-  if (req.method === "GET" && (path === "/" || path === "/health")) {
+  if (req.method === "GET" && (path === "/" || path.endsWith("/health"))) {
     return send(res, 200, { status: "ok", service: "dirk-coderun", languages: ["py"], pool: POOL_SIZE });
   }
 
-  if (path === "/upload") { if (!authed(req)) return send(res, 401, { error: "API key is required" }); return send(res, 200, { files: [] }); }
+  // Minimal file-endpoint stubs so LibreChat never 500s if it probes them.
+  // Match by suffix so any base-URL prefix (with or without /v1) works.
+  if (path.endsWith("/upload")) { if (!authed(req)) return send(res, 401, { error: "API key is required" }); return send(res, 200, { files: [] }); }
+  if (path.includes("/download/") || path.includes("/files/")) { return send(res, 200, { files: [] }); }
 
-  if (path === "/exec" || path === "/exec/programmatic") {
+  if (path.endsWith("/exec") || path.endsWith("/exec/programmatic")) {
     if (req.method !== "POST") return send(res, 405, { error: "method not allowed" });
     if (!authed(req)) return send(res, 401, { error: "API key is required" });
     let body = "";
