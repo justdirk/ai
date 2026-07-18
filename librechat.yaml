@@ -28,6 +28,7 @@ memory:
     - "projects"
     - "learned_facts"
   agent:
+    enabled: true
     provider: "OpenRouter"
     model: "deepseek/deepseek-chat"
     instructions: "You maintain long-term memory for a student on an AI learning platform. Remember durable, reusable facts: their skill level, learning goals, the projects or apps they are building, tools and languages they use, and stated preferences. Store only lasting, useful information under the valid keys. Ignore one-off, trivial, or sensitive details. Remove outdated or contradicted information."
