@@ -1,7 +1,10 @@
 // Prompt Coach middleware — OpenAI-compatible endpoint.
-// Every request: (1) a cheap model rewrites the user's last message into a
-// well-structured prompt using a fixed methodology, (2) that improved prompt is
-// shown to the user, then (3) a frontier model solves the improved prompt.
+// FIRST message of a conversation: (1) a cheap model rewrites it into a
+// well-structured prompt, (2) that improved prompt is shown to the user, then
+// (3) a frontier model solves it.
+// FOLLOW-UP messages (anything after the first answer): passed straight through
+// to the frontier model WITH full conversation history and NO rewrite — so
+// refinements like "make it shorter" / "now in Spanish" keep their context.
 import http from "node:http";
 
 const GATEWAY = (process.env.GATEWAY_URL || "https://litellm-production-bbed.up.railway.app/v1").replace(/\/+$/, "");
@@ -68,16 +71,25 @@ http.createServer((req, res) => {
     for (let i = messages.length - 1; i >= 0; i--) { if (messages[i].role === "user") { li = i; break; } }
     const original = li >= 0 ? (typeof messages[li].content === "string" ? messages[li].content : JSON.stringify(messages[li].content)) : "";
 
-    // Step 1 — cheap optimizer
-    let improved = original;
-    try {
-      const or = await gw(OPTIMIZER, [{ role: "system", content: OPT_SYS }, { role: "user", content: original }], { max_tokens: 600, temperature: 0.3 });
-      const oj = await or.json();
-      improved = (oj.choices && oj.choices[0] && oj.choices[0].message && oj.choices[0].message.content || original).trim();
-    } catch (e) { /* fall back to original */ }
+    // Coach ONLY the first user turn. If the conversation already has an
+    // assistant reply, this is a follow-up: skip the rewrite entirely and let
+    // the solver answer with the full history intact (so refinement works).
+    const isFollowUp = messages.some(m => m && m.role === "assistant");
 
-    const solverMsgs = messages.map((m, i) => (i === li ? { ...m, content: improved } : m));
-    const preamble = "**📝 Improved prompt** _(auto-structured for you)_\n\n> " + improved.replace(/\n/g, "\n> ") + "\n\n---\n\n";
+    let improved = original;
+    let preamble = "";
+    let solverMsgs = messages;
+
+    if (!isFollowUp) {
+      // Step 1 — cheap optimizer (first turn only)
+      try {
+        const or = await gw(OPTIMIZER, [{ role: "system", content: OPT_SYS }, { role: "user", content: original }], { max_tokens: 600, temperature: 0.3 });
+        const oj = await or.json();
+        improved = (oj.choices && oj.choices[0] && oj.choices[0].message && oj.choices[0].message.content || original).trim();
+      } catch (e) { /* fall back to original */ }
+      solverMsgs = messages.map((m, i) => (i === li ? { ...m, content: improved } : m));
+      preamble = "**📝 Improved prompt** _(auto-structured for you)_\n\n> " + improved.replace(/\n/g, "\n> ") + "\n\n---\n\n";
+    }
 
     // Step 2 — frontier solver
     if (!wantStream) {
@@ -96,7 +108,7 @@ http.createServer((req, res) => {
     }
 
     res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", "Connection": "keep-alive" });
-    res.write(chunk({ role: "assistant", content: preamble }));
+    if (preamble) res.write(chunk({ role: "assistant", content: preamble }));
     try {
       const sr = await gw(SOLVER, solverMsgs, { max_tokens: payload.max_tokens || 2000, temperature: payload.temperature, stream: true });
       const reader = sr.body.getReader();
