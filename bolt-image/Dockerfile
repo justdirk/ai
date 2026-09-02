@@ -38,6 +38,10 @@ RUN sed -i "s/export const DEFAULT_MODEL = 'claude-3-5-sonnet-latest';/export co
   && sed -i "s/export const DEFAULT_PROVIDER = llmManager.getDefaultProvider();/export const DEFAULT_PROVIDER = PROVIDER_LIST.find((p) => p.name === 'OpenAILike') ?? llmManager.getDefaultProvider();/" app/utils/constants.ts
 # Trimmed prompt box (no model/API-key controls; keeps the enhance button)
 COPY ChatBox.tsx app/components/chat/ChatBox.tsx
+# ---- dirk.it gate: members only (signed .dirk.it cookie from gate.dirk.it) ----
+COPY _middleware.ts functions/_middleware.ts
+RUN sed -i 's/^interface Env {/interface Env {\n  GATE_COOKIE_SECRET: string;\n  GATE_LOGIN_URL: string;\n  GATE_BYPASS: string;/' worker-configuration.d.ts \
+  && grep -q GATE_COOKIE_SECRET worker-configuration.d.ts
 # Friendlier intro copy
 RUN sed -i 's/Where ideas begin/Build an app by describing it/' app/components/chat/BaseChat.tsx \
   && sed -i 's/Bring ideas to life in seconds or get help on existing projects./Tell me what to build in plain language and I will write the code and run it live./' app/components/chat/BaseChat.tsx

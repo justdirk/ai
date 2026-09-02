@@ -1,0 +1,17 @@
+{
+  "name": "dirkit-ai-gate",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Paywall + provisioning in front of dirk.it AI (LibreChat) and the app builder (bolt.diy)",
+  "main": "server.mjs",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "engines": { "node": ">=20" },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "mongodb": "^6.9.0",
+    "stripe": "^17.3.0"
+  }
+}
