@@ -38,7 +38,7 @@ const COOKIE_NAME = env("COOKIE_NAME", "dirkit_ai");
 const COOKIE_SECRET = need("COOKIE_SECRET");
 const COOKIE_DAYS = parseInt(env("COOKIE_DAYS", "30"), 10);
 const WEEKLY_CREDITS = parseInt(env("WEEKLY_CREDITS", "2000000"), 10); // 1,000,000 ≈ $1
-const COURSE_ACCESS_URL = env("COURSE_ACCESS_URL", "https://jbbvoajtbgzhxnbcpkcc.supabase.co/functions/v1/dirk-course-access");
+const COURSE_ACCESS_URL = env("COURSE_ACCESS_URL", "https://jbbvoajtbgzhxnbcpkcc.supabase.co/functions/v1/ai-gate-student");
 const COURSE_ACCESS_TOKEN = env("COURSE_ACCESS_TOKEN", "");
 const STRIPE_SECRET_KEY = env("STRIPE_SECRET_KEY", "");
 const STRIPE_WEBHOOK_SECRET = env("STRIPE_WEBHOOK_SECRET", "");
@@ -66,6 +66,7 @@ await Members.createIndex({ email: 1 }, { unique: true });
 await Members.createIndex({ stripeSubscriptionId: 1 });
 await Links.createIndex({ tokenHash: 1 }, { unique: true });
 await Links.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+await Links.createIndex({ checkoutSession: 1 }, { sparse: true });
 
 const log = (...a) => console.log(new Date().toISOString(), ...a);
 const now = () => new Date();
@@ -243,7 +244,7 @@ async function checkoutUrl(email, lang) {
     line_items: [{ price: STRIPE_PRICE_AI, quantity: 1 }],
     customer_email: email,
     allow_promotion_codes: true,
-    success_url: `${SITE_URL}/chat/?paid=1`,
+    success_url: `${SITE_URL}/chat/?paid=1&session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${SITE_URL}/chat/`,
     locale: ["de", "es", "pt-BR", "it", "en"].includes(lang) ? lang : "auto",
     metadata: { product_code: PRODUCT_CODE, email },
@@ -341,11 +342,43 @@ const server = http.createServer(async (req, res) => {
         const m = await Members.findOne({ email });
         await provision(email);
         const sent = await sendSignin(email, next, !m?.lcInitialized);
-        if (!sent) return json(res, 503, { error: "Email delivery isn't configured yet. Write to mail@dirk.it and we'll set you up by hand." }, h);
+        if (!sent) {
+          if (m?.lcInitialized) return json(res, 200, { status: "login", url: `${CHAT_URL}/login` }, h);
+          return json(res, 503, { error: "Email delivery isn't configured yet. Write to mail@dirk.it and we'll set you up by hand." }, h);
+        }
         return json(res, 200, { status: "sent", source: ent.source }, h);
       }
       try { return json(res, 200, { status: "checkout", url: await checkoutUrl(email, lang) }, h); }
       catch (e) { log("checkout error", e.message); return json(res, 503, { error: "Payments aren't available right now. Write to mail@dirk.it." }, h); }
+    }
+
+    // Straight back from Stripe Checkout: the session id proves the payment, so
+    // the buyer goes into the workspace without waiting for the email. One claim
+    // per session; the webhook does the same provisioning (idempotent).
+    if (req.method === "POST" && url.pathname === "/api/paid") {
+      const h = cors(req);
+      if (limited("paid:" + ip(req), 20, 10 * 60e3)) return json(res, 429, { error: "Too many requests." }, h);
+      if (!stripe) return json(res, 503, { error: "Payments aren't configured." }, h);
+      let body; try { body = JSON.parse((await readBody(req)).toString() || "{}"); } catch { return json(res, 400, { error: "Bad request" }, h); }
+      const sid = String(body.session_id || "");
+      if (!/^cs_(live|test)_[A-Za-z0-9]+$/.test(sid)) return json(res, 400, { error: "Bad session" }, h);
+      let s; try { s = await stripe.checkout.sessions.retrieve(sid); } catch (e) { log("paid retrieve", e.message); return json(res, 404, { error: "Unknown checkout session." }, h); }
+      if (s.status !== "complete" || s.metadata?.product_code !== PRODUCT_CODE) return json(res, 409, { error: "That checkout isn't complete." }, h);
+      const email = normEmail(s.customer_details?.email || s.customer_email || s.metadata?.email);
+      if (!email) return json(res, 409, { error: "No email on that checkout." }, h);
+      const claimed = await Links.findOne({ checkoutSession: sid });
+      if (claimed) return json(res, 200, { status: "sent" }, h); // already used — the email link still works
+      const prev = await Members.findOne({ email });
+      await Members.updateOne(
+        { email },
+        { $set: { active: true, source: "stripe", stripeCustomerId: typeof s.customer === "string" ? s.customer : null, stripeSubscriptionId: typeof s.subscription === "string" ? s.subscription : null, updatedAt: now() }, $setOnInsert: { createdAt: now() } },
+        { upsert: true },
+      );
+      const user = await provision(email);
+      if (prev && prev.active === false) await reactivateCredits(user._id);
+      const raw = crypto.randomBytes(32).toString("base64url");
+      await Links.insertOne({ tokenHash: sha256(raw), email, next: "chat", checkoutSession: sid, createdAt: now(), expiresAt: new Date(Date.now() + 30 * 60e3) });
+      return json(res, 200, { status: "go", url: `${GATE_URL}/auth/verify?t=${raw}` }, h);
     }
 
     if (req.method === "GET" && url.pathname === "/auth/verify") {
